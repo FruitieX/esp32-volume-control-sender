@@ -21,6 +21,7 @@
    and C macros may be used in these files 
  */
 #include "soc/rtc_cntl_reg.h"
+#include "soc/rtc_io_reg.h"
 #include "soc/soc_ulp.h"
 
 	/* ADC1 channel 7, GPIO35 */
@@ -32,7 +33,7 @@
 	.set adc_oversampling_factor, (1 << adc_oversampling_factor_log)
 
 	/* How large a change in ADC value needs to be detected before we wake the SoC */
-	.set diff_thr, 20
+	.set diff_thr, 30
 
 	/* Define variables, which go into .bss section (zero-initialized data) */
 	.bss
@@ -67,6 +68,25 @@ entry:
 	/* initialize the loop counter */
 	stage_rst
 measure:
+	/* set onboard led high */
+	/*
+	.set led_gpio, 12              // gpio pin 2 is rtc pin 12
+	// might be needed for some pads, but surely not #2
+	// WRITE_RTC_REG(RTC_IO_TOUCH_PAD2_REG, RTC_IO_TOUCH_PAD2_TO_GPIO_S, 1, 1)
+	WRITE_RTC_REG(RTC_IO_TOUCH_PAD2_REG, RTC_IO_TOUCH_PAD2_MUX_SEL_S, 1, 1)
+	WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + led_gpio, 1, 1)
+	WRITE_RTC_REG(RTC_GPIO_ENABLE_W1TS_REG, RTC_GPIO_ENABLE_W1TS_S + led_gpio, 1, 1)
+	*/
+
+	// Is there a better way of finding the correct constants than staring at
+	// https://i0.wp.com/randomnerdtutorials.com/wp-content/uploads/2018/08/esp32-pinout-chip-ESP-WROOM-32.png
+	// and digging through header files?
+	/* set pot pin high */
+	.set pot_gpio, 14              // gpio pin 13 is rtc pin 14
+	WRITE_RTC_REG(RTC_IO_TOUCH_PAD4_REG, RTC_IO_TOUCH_PAD4_MUX_SEL_S, 1, 1)
+	WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + pot_gpio, 1, 1)
+	WRITE_RTC_REG(RTC_GPIO_ENABLE_W1TS_REG, RTC_GPIO_ENABLE_W1TS_S + pot_gpio, 1, 1)
+
 	/* measure and add value to accumulator */
 	adc r1, 0, adc_channel + 1
 	add r0, r0, r1
@@ -74,6 +94,12 @@ measure:
 	/* increment loop counter and check exit condition */
 	stage_inc 1
 	jumps measure, adc_oversampling_factor, lt
+
+	/* set onboard led low */
+	// WRITE_RTC_REG(RTC_GPIO_ENABLE_W1TC_REG, RTC_GPIO_ENABLE_W1TC_S + led_gpio, 1, 1)
+
+	/* set pot pin low */
+	WRITE_RTC_REG(RTC_GPIO_ENABLE_W1TC_REG, RTC_GPIO_ENABLE_W1TC_S + pot_gpio, 1, 1)
 
 	/* divide accumulator by adc_oversampling_factor.
 	   Since it is chosen as a power of two, use right shift */
