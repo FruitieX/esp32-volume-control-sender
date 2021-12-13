@@ -37,6 +37,8 @@
 #include "esp_now.h"
 #include "esp_crc.h"
 #include "espnow_example.h"
+#include "phy.h"
+#include "esp_phy_init.h"
 
 extern const uint8_t ulp_main_bin_start[] asm("_binary_ulp_main_bin_start");
 extern const uint8_t ulp_main_bin_end[]   asm("_binary_ulp_main_bin_end");
@@ -73,9 +75,9 @@ static void example_wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_mode(ESPNOW_WIFI_MODE) );
     ESP_ERROR_CHECK( esp_wifi_start());
 
-#if CONFIG_ESPNOW_ENABLE_LONG_RANGE
+// #if CONFIG_ESPNOW_ENABLE_LONG_RANGE
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
-#endif
+// #endif
 }
 
 /* ESPNOW sending or receiving callback function is called in WiFi task.
@@ -97,31 +99,6 @@ static void example_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_
     if (xQueueSend(s_example_espnow_queue, &evt, ESPNOW_MAXDELAY) != pdTRUE) {
         ESP_LOGE(TAG, "Send send queue fail");
     }
-}
-
-/* Parse received ESPNOW data. */
-int example_espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, int *magic)
-{
-    example_espnow_data_t *buf = (example_espnow_data_t *)data;
-    uint16_t crc, crc_cal = 0;
-
-    if (data_len < sizeof(example_espnow_data_t)) {
-        ESP_LOGE(TAG, "Receive ESPNOW data too short, len:%d", data_len);
-        return -1;
-    }
-
-    *state = buf->state;
-    *seq = buf->seq_num;
-    *magic = buf->magic;
-    crc = buf->crc;
-    buf->crc = 0;
-    crc_cal = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, data_len);
-
-    if (crc_cal == crc) {
-        return buf->type;
-    }
-
-    return -1;
 }
 
 /* Prepare ESPNOW data to be sent. */
@@ -167,6 +144,7 @@ static void example_espnow_task(void *pvParameter)
 
                 example_espnow_data_prepare(send_param);
 
+                printf("%d: Calling esp_now_send()\n", esp_log_early_timestamp());
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
                     ESP_LOGE(TAG, "Send error");
                     example_espnow_deinit(send_param);
@@ -177,7 +155,10 @@ static void example_espnow_task(void *pvParameter)
             }
             case EXAMPLE_ESPNOW_SEND_CB:
             {
-                printf("Entering deep sleep\n\n");
+                printf("%d: De-init wifi\n", esp_log_early_timestamp());
+                // esp_wifi_stop();
+                // esp_wifi_deinit();
+                printf("%d: Entering deep sleep\n\n", esp_log_early_timestamp());
                 start_ulp_program();
                 ESP_ERROR_CHECK( esp_sleep_enable_ulp_wakeup() );
                 esp_deep_sleep_start();
@@ -264,6 +245,14 @@ static void example_espnow_deinit(example_espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
+// static esp_err_t init_phy(esp_phy_calibration_mode_t cal_mode)
+// {
+    // static RTC_DATA_ATTR esp_phy_calibration_data_t s_rtc_cal_data;
+    // const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
+    // assert(init_data);
+    // return esp_phy_rf_init(init_data, cal_mode, &s_rtc_cal_data, PHY_WIFI_MODULE);
+// }
+
 void app_main(void)
 {
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
@@ -278,12 +267,23 @@ void app_main(void)
         esp_deep_sleep_start();
     } else {
         ulp_last_result = ulp_result;
-        printf("Deep sleep wakeup\n");
+        printf("%d: Deep sleep wakeup\n", esp_log_early_timestamp());
         printf("ULP did %d measurements since last reset\n", ulp_sample_counter & UINT16_MAX);
         ulp_last_result &= UINT16_MAX;
         printf("Value=%d\n", ulp_last_result);
 
+        // if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
+        //     // Full calibration on reset
+        //     ESP_ERROR_CHECK( init_phy(PHY_RF_CAL_FULL) );
+        // }
+        // else
+        // {
+        //     // No calibration on deep sleep wakeup, just set phy data
+        //     ESP_ERROR_CHECK( init_phy(PHY_RF_CAL_NONE) );
+        // }
+
         // Initialize NVS
+        printf("%d: Initializing nvs\n", esp_log_early_timestamp());
         esp_err_t ret = nvs_flash_init();
         if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
             ESP_ERROR_CHECK( nvs_flash_erase() );
@@ -291,13 +291,18 @@ void app_main(void)
         }
         ESP_ERROR_CHECK( ret );
 
+        printf("%d: Initializing wifi\n", esp_log_early_timestamp());
         example_wifi_init();
+
+        printf("%d: Initializing espnow\n", esp_log_early_timestamp());
         example_espnow_init();
 
         example_espnow_event_t evt;
         example_espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
         evt.id = EXAMPLE_ESPNOW_DO_SEND;
         memcpy(send_cb->mac_addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN);
+
+        printf("%d: Adding msg to send queue\n", esp_log_early_timestamp());
         if (xQueueSend(s_example_espnow_queue, &evt, ESPNOW_MAXDELAY) != pdTRUE) {
             ESP_LOGE(TAG, "Send send queue fail");
         }
