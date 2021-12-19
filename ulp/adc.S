@@ -24,8 +24,8 @@
 #include "soc/rtc_io_reg.h"
 #include "soc/soc_ulp.h"
 
-	/* ADC1 channel 7, GPIO35 */
-	.set adc_channel, 7
+	/* ADC1 channel 5, GPIO33 */
+	.set adc_channel, 5
 
 	/* Configure the number of ADC samples to average on each measurement.
 	   For convenience, make it a power of 2. */
@@ -82,8 +82,8 @@ measure:
 	// https://i0.wp.com/randomnerdtutorials.com/wp-content/uploads/2018/08/esp32-pinout-chip-ESP-WROOM-32.png
 	// and digging through header files?
 	/* set pot pin high */
-	.set pot_gpio, 14              // gpio pin 13 is rtc pin 14
-	WRITE_RTC_REG(RTC_IO_TOUCH_PAD4_REG, RTC_IO_TOUCH_PAD4_MUX_SEL_S, 1, 1)
+	.set pot_gpio, 17              // gpio pin 27 is rtc pin 17
+	WRITE_RTC_REG(RTC_IO_TOUCH_PAD7_REG, RTC_IO_TOUCH_PAD7_MUX_SEL_S, 1, 1)
 	WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + pot_gpio, 1, 1)
 	WRITE_RTC_REG(RTC_GPIO_ENABLE_W1TS_REG, RTC_GPIO_ENABLE_W1TS_S + pot_gpio, 1, 1)
 
