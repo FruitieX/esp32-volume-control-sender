@@ -133,19 +133,19 @@ static void example_espnow_task(void *pvParameter)
                 example_espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
                 is_broadcast = IS_BROADCAST_ADDR(send_cb->mac_addr);
 
-                ESP_LOGE(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
+                // ESP_LOGE(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
 
                 if (is_broadcast && (send_param->broadcast == false)) {
                     break;
                 }
 
-                ESP_LOGE(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
+                // ESP_LOGE(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
 
                 memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
 
                 example_espnow_data_prepare(send_param);
 
-                printf("%d: Calling esp_now_send()\n", esp_log_early_timestamp());
+                // printf("%d: Calling esp_now_send()\n", esp_log_early_timestamp());
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
                     ESP_LOGE(TAG, "Send error");
                     example_espnow_deinit(send_param);
@@ -156,7 +156,7 @@ static void example_espnow_task(void *pvParameter)
             }
             case EXAMPLE_ESPNOW_SEND_CB:
             {
-                printf("%d: De-init wifi\n", esp_log_early_timestamp());
+                // printf("%d: De-init wifi\n", esp_log_early_timestamp());
                 // esp_wifi_stop();
                 // esp_wifi_deinit();
                 printf("%d: Entering deep sleep\n\n", esp_log_early_timestamp());
@@ -246,15 +246,6 @@ static void example_espnow_deinit(example_espnow_send_param_t *send_param)
     esp_now_deinit();
 }
 
-// static esp_err_t init_phy(esp_phy_calibration_mode_t cal_mode)
-// {
-    // static RTC_DATA_ATTR esp_phy_calibration_data_t s_rtc_cal_data;
-    // const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
-    // assert(init_data);
-    // return esp_phy_rf_init(init_data, cal_mode, &s_rtc_cal_data, PHY_WIFI_MODULE);
-// }
-
-static int64_t s_phy_rf_en_ts = 0;
 RTC_DATA_ATTR esp_phy_calibration_data_t rtc_cal_data;
 
 void app_main(void)
@@ -284,23 +275,23 @@ void app_main(void)
         esp_deep_sleep_start();
     } else {
         ulp_last_result = ulp_result;
-        printf("%d: Deep sleep wakeup\n", esp_log_early_timestamp());
-        printf("ULP did %d measurements since last reset\n", ulp_sample_counter & UINT16_MAX);
+        // printf("%d: Deep sleep wakeup\n", esp_log_early_timestamp());
+        // printf("ULP did %d measurements since last reset\n", ulp_sample_counter & UINT16_MAX);
         ulp_last_result &= UINT16_MAX;
         printf("Value=%d\n", ulp_last_result);
 
-        s_phy_rf_en_ts = esp_timer_get_time();
+        // s_phy_rf_en_ts = esp_timer_get_time();
         // phy_update_wifi_mac_time(false, s_phy_rf_en_ts);
         esp_phy_common_clock_enable();
         // No calibration on deep sleep wakeup, just set phy data
-        printf("%d: esp_phy_get_init_data()\n", esp_log_early_timestamp());
+        // printf("%d: esp_phy_get_init_data()\n", esp_log_early_timestamp());
         const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
         if (init_data == NULL) {
             ESP_LOGE(TAG, "failed to obtain PHY init data");
             abort();
         }
 
-        printf("%d: register_chipv7_phy()\n", esp_log_early_timestamp());
+        // printf("%d: register_chipv7_phy()\n", esp_log_early_timestamp());
         register_chipv7_phy(init_data, &rtc_cal_data, PHY_RF_CAL_NONE);
 
         phy_wakeup_init();
@@ -320,10 +311,10 @@ void app_main(void)
         // }
         // ESP_ERROR_CHECK( ret );
 
-        printf("%d: Initializing wifi\n", esp_log_early_timestamp());
+        // printf("%d: Initializing wifi\n", esp_log_early_timestamp());
         example_wifi_init();
 
-        printf("%d: Initializing espnow\n", esp_log_early_timestamp());
+        // printf("%d: Initializing espnow\n", esp_log_early_timestamp());
         example_espnow_init();
 
         example_espnow_event_t evt;
@@ -331,7 +322,7 @@ void app_main(void)
         evt.id = EXAMPLE_ESPNOW_DO_SEND;
         memcpy(send_cb->mac_addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN);
 
-        printf("%d: Adding msg to send queue\n", esp_log_early_timestamp());
+        // printf("%d: Adding msg to send queue\n", esp_log_early_timestamp());
         if (xQueueSend(s_example_espnow_queue, &evt, ESPNOW_MAXDELAY) != pdTRUE) {
             ESP_LOGE(TAG, "Send send queue fail");
         }
