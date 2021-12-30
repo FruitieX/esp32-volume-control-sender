@@ -70,6 +70,7 @@ static void example_wifi_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    cfg.nvs_enable = 0;
     ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
     ESP_ERROR_CHECK( esp_wifi_set_mode(ESPNOW_WIFI_MODE) );
@@ -253,11 +254,27 @@ static void example_espnow_deinit(example_espnow_send_param_t *send_param)
     // return esp_phy_rf_init(init_data, cal_mode, &s_rtc_cal_data, PHY_WIFI_MODULE);
 // }
 
+static int64_t s_phy_rf_en_ts = 0;
+RTC_DATA_ATTR esp_phy_calibration_data_t rtc_cal_data;
+
 void app_main(void)
 {
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
     if (cause != ESP_SLEEP_WAKEUP_ULP) {
         printf("Not ULP wakeup\n");
+
+        const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
+        if (init_data == NULL) {
+            ESP_LOGE(TAG, "failed to obtain PHY init data");
+            abort();
+        }
+
+        esp_phy_enable();
+
+        // Full calibration on reset
+        ESP_LOGI(TAG, "saving new calibration data");
+        // esp_phy_calibration_data_t* cal_data = calloc(1, sizeof (esp_phy_calibration_data_t));
+        register_chipv7_phy(init_data, &rtc_cal_data, PHY_RF_CAL_FULL);
 
         init_ulp_program();
 
@@ -272,24 +289,36 @@ void app_main(void)
         ulp_last_result &= UINT16_MAX;
         printf("Value=%d\n", ulp_last_result);
 
-        // if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-        //     // Full calibration on reset
-        //     ESP_ERROR_CHECK( init_phy(PHY_RF_CAL_FULL) );
-        // }
-        // else
-        // {
-        //     // No calibration on deep sleep wakeup, just set phy data
-        //     ESP_ERROR_CHECK( init_phy(PHY_RF_CAL_NONE) );
-        // }
+        s_phy_rf_en_ts = esp_timer_get_time();
+        // phy_update_wifi_mac_time(false, s_phy_rf_en_ts);
+        esp_phy_common_clock_enable();
+        // No calibration on deep sleep wakeup, just set phy data
+        printf("%d: esp_phy_get_init_data()\n", esp_log_early_timestamp());
+        const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
+        if (init_data == NULL) {
+            ESP_LOGE(TAG, "failed to obtain PHY init data");
+            abort();
+        }
+
+        printf("%d: register_chipv7_phy()\n", esp_log_early_timestamp());
+        register_chipv7_phy(init_data, &rtc_cal_data, PHY_RF_CAL_NONE);
+
+        phy_wakeup_init();
+        // phy_digital_regs_load();
+
+        // printf("%d: esp_phy_enable()\n", esp_log_early_timestamp());
+        // esp_phy_enable();
+
+        // coex_bt_high_prio();
 
         // Initialize NVS
-        printf("%d: Initializing nvs\n", esp_log_early_timestamp());
-        esp_err_t ret = nvs_flash_init();
-        if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-            ESP_ERROR_CHECK( nvs_flash_erase() );
-            ret = nvs_flash_init();
-        }
-        ESP_ERROR_CHECK( ret );
+        // printf("%d: Initializing nvs\n", esp_log_early_timestamp());
+        // esp_err_t ret = nvs_flash_init();
+        // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        //     ESP_ERROR_CHECK( nvs_flash_erase() );
+        //     ret = nvs_flash_init();
+        // }
+        // ESP_ERROR_CHECK( ret );
 
         printf("%d: Initializing wifi\n", esp_log_early_timestamp());
         example_wifi_init();
