@@ -29,11 +29,11 @@
 
 	/* Configure the number of ADC samples to average on each measurement.
 	   For convenience, make it a power of 2. */
-	.set adc_oversampling_factor_log, 2
+	.set adc_oversampling_factor_log, 4
 	.set adc_oversampling_factor, (1 << adc_oversampling_factor_log)
 
 	/* How large a change in ADC value needs to be detected before we wake the SoC */
-	.set diff_thr, 30
+	.set diff_thr, 10
 
 	/* Define variables, which go into .bss section (zero-initialized data) */
 	.bss
@@ -111,8 +111,19 @@ measure:
 	move r3, last_result
 	ld r2, r3, 0
 
-	/* low_thr (r3) = last_result (r2) - diff_thr */
-	sub r3, r2, diff_thr
+	/* store diff_thr in r1 */
+	move r1, diff_thr
+
+	/* begin: scale diff_thr (r1) for log pot */
+	/* r3 = last_result (r2) >> 0x03 */
+	rsh r3, r2, 0x05
+
+	/* diff_thr (r1) = diff_thr (r1) + r3 */
+	add r1, r1, r3
+	/* end: scale diff_thr (r1) for log pot */
+
+	/* low_thr (r3) = last_result (r2) - diff_thr (r1) */
+	sub r3, r2, r1
 	jump zero_low_thr, ov
 
 check_low_thr:
@@ -120,8 +131,8 @@ check_low_thr:
 	sub r3, r0, r3
 	jump wake_up, ov
 
-	/* high_thr (r3) = last_result (r2) + diff_thr */
-	add r3, r2, diff_thr
+	/* high_thr (r3) = last_result (r2) + diff_thr (r1) */
+	add r3, r2, r1
 
 	/* wake up if value (r0) > high_thr (r3) */
 	sub r3, r3, r0
