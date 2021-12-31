@@ -293,13 +293,10 @@ void app_main(void)
 
         esp_phy_enable();
 
-        // Full calibration on reset
-        ESP_LOGI(TAG, "saving new calibration data");
-        // esp_phy_calibration_data_t* cal_data = calloc(1, sizeof (esp_phy_calibration_data_t));
+        // Full calibration on reset, store calibration data in RTC memory.
         register_chipv7_phy(init_data, &rtc_cal_data, PHY_RF_CAL_FULL);
 
         init_ulp_program();
-
         printf("Entering deep sleep\n\n");
         start_ulp_program();
         ESP_ERROR_CHECK( esp_sleep_enable_ulp_wakeup() );
