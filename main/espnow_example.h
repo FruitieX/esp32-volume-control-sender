@@ -64,6 +64,7 @@ typedef struct {
     uint16_t crc;                         //CRC16 value of ESPNOW data.
     uint32_t magic;                       //Magic number which is used to determine which device to send unicast ESPNOW data.
     uint32_t payload;                     //Real payload of ESPNOW data.
+    uint16_t bat_mv;                         //Real payload of ESPNOW data.
 } __attribute__((packed)) example_espnow_data_t;
 
 /* Parameters of sending ESPNOW data. */

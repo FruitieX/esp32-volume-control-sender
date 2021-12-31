@@ -39,6 +39,7 @@
 #include "espnow_example.h"
 #include "phy.h"
 #include "esp_phy_init.h"
+#include "esp_adc_cal.h"
 
 extern const uint8_t ulp_main_bin_start[] asm("_binary_ulp_main_bin_start");
 extern const uint8_t ulp_main_bin_end[]   asm("_binary_ulp_main_bin_end");
@@ -102,6 +103,8 @@ static void example_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_
     }
 }
 
+uint16_t bat_mv;
+
 /* Prepare ESPNOW data to be sent. */
 void example_espnow_data_prepare(example_espnow_send_param_t *send_param)
 {
@@ -115,13 +118,42 @@ void example_espnow_data_prepare(example_espnow_send_param_t *send_param)
     buf->crc = 0;
     buf->magic = send_param->magic;
     buf->payload = ulp_last_result;
+
+    // TinyPICO specific: read approx battery voltage
+    // From https://github.com/UnexpectedMaker/tinypico-helper/blob/f6f992d3f36738796c21d6c7825b8ef641a5f31b/src/TinyPICO.cpp
+    // Battery divider resistor values
+    #define UPPER_DIVIDER 442
+    #define LOWER_DIVIDER 160
+    #define DEFAULT_VREF  1100  // Default reference voltage in mv
+    #define BATT_CHANNEL ADC1_CHANNEL_7  // Battery voltage ADC input
+
+    #define BAT_CHARGE 34
+    #define BAT_VOLTAGE 35
+
+    uint32_t raw;
+    esp_adc_cal_characteristics_t chars;
+
+    // grab latest voltage
+    // analogRead(BAT_VOLTAGE);  // Just to get the ADC setup
+    adc1_config_channel_atten(BATT_CHANNEL, ADC_ATTEN_DB_11);
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    // this stops ULP readings from working
+    raw = adc1_get_raw(BATT_CHANNEL);  // Read of raw ADC value
+
+    // Get ADC calibration values
+    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, ESP_ADC_CAL_VAL_DEFAULT_VREF, &chars);
+
+    // Convert to calibrated mV
+    bat_mv = esp_adc_cal_raw_to_voltage(raw, &chars) * (LOWER_DIVIDER+UPPER_DIVIDER) / LOWER_DIVIDER;
+
+    buf->bat_mv = bat_mv;
+
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
 static void example_espnow_task(void *pvParameter)
 {
     example_espnow_event_t evt;
-    bool is_broadcast = false;
 
     /* Start sending broadcast ESPNOW data. */
     example_espnow_send_param_t *send_param = (example_espnow_send_param_t *)pvParameter;
@@ -131,13 +163,8 @@ static void example_espnow_task(void *pvParameter)
             case EXAMPLE_ESPNOW_DO_SEND:
             {
                 example_espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
-                is_broadcast = IS_BROADCAST_ADDR(send_cb->mac_addr);
 
                 // ESP_LOGE(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
-
-                if (is_broadcast && (send_param->broadcast == false)) {
-                    break;
-                }
 
                 // ESP_LOGE(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
 
@@ -159,7 +186,11 @@ static void example_espnow_task(void *pvParameter)
                 // printf("%d: De-init wifi\n", esp_log_early_timestamp());
                 // esp_wifi_stop();
                 // esp_wifi_deinit();
-                printf("%d: Entering deep sleep\n\n", esp_log_early_timestamp());
+
+                // Seems like we need to re-run this after using adc1_get_raw().
+                adc1_ulp_enable();
+
+                printf("%dms: Sent val=%d, bat_mv=%d. Entering deep sleep.\n", esp_log_early_timestamp(), ulp_last_result, bat_mv);
                 start_ulp_program();
                 ESP_ERROR_CHECK( esp_sleep_enable_ulp_wakeup() );
                 esp_deep_sleep_start();
@@ -220,8 +251,8 @@ static esp_err_t example_espnow_init(void)
     send_param->broadcast = true;
     send_param->state = 0;
     send_param->magic = esp_random();
-    send_param->len = 14;
-    send_param->buffer = malloc(14);
+    send_param->len = 16;
+    send_param->buffer = malloc(16);
     if (send_param->buffer == NULL) {
         ESP_LOGE(TAG, "Malloc send buffer fail");
         free(send_param);
@@ -277,39 +308,23 @@ void app_main(void)
         ulp_last_result = ulp_result;
         // printf("%d: Deep sleep wakeup\n", esp_log_early_timestamp());
         // printf("ULP did %d measurements since last reset\n", ulp_sample_counter & UINT16_MAX);
-        ulp_last_result &= UINT16_MAX;
-        printf("Value=%d\n", ulp_last_result);
 
-        // s_phy_rf_en_ts = esp_timer_get_time();
-        // phy_update_wifi_mac_time(false, s_phy_rf_en_ts);
+        ulp_last_result &= UINT16_MAX;
+        // printf("Value=%d\n", ulp_last_result);
+
         esp_phy_common_clock_enable();
-        // No calibration on deep sleep wakeup, just set phy data
+
+        // No calibration on deep sleep wakeup, just set phy data from rtc_cal_data
         // printf("%d: esp_phy_get_init_data()\n", esp_log_early_timestamp());
         const esp_phy_init_data_t* init_data = esp_phy_get_init_data();
         if (init_data == NULL) {
             ESP_LOGE(TAG, "failed to obtain PHY init data");
             abort();
         }
-
         // printf("%d: register_chipv7_phy()\n", esp_log_early_timestamp());
         register_chipv7_phy(init_data, &rtc_cal_data, PHY_RF_CAL_NONE);
 
         phy_wakeup_init();
-        // phy_digital_regs_load();
-
-        // printf("%d: esp_phy_enable()\n", esp_log_early_timestamp());
-        // esp_phy_enable();
-
-        // coex_bt_high_prio();
-
-        // Initialize NVS
-        // printf("%d: Initializing nvs\n", esp_log_early_timestamp());
-        // esp_err_t ret = nvs_flash_init();
-        // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        //     ESP_ERROR_CHECK( nvs_flash_erase() );
-        //     ret = nvs_flash_init();
-        // }
-        // ESP_ERROR_CHECK( ret );
 
         // printf("%d: Initializing wifi\n", esp_log_early_timestamp());
         example_wifi_init();
@@ -346,8 +361,32 @@ static void init_ulp_program(void)
 #endif
     adc1_ulp_enable();
 
-    /* Set ULP wake up period to 25ms */
-    ulp_set_wakeup_period(0, 25 * 1000);
+    /* Set ULP wake up period to 10ms */
+    ulp_set_wakeup_period(0, 10 * 1000);
+
+    // TinyPICO specific: disable onboard LED
+    // From https://github.com/UnexpectedMaker/tinypico-helper/blob/f6f992d3f36738796c21d6c7825b8ef641a5f31b/src/TinyPICO.cpp
+    #define DOTSTAR_PWR 13
+    #define DOTSTAR_DATA 2
+    #define DOTSTAR_CLK 12
+
+    // digitalWrite( DOTSTAR_PWR, !state );
+    // pinMode( DOTSTAR_DATA, state ? OUTPUT : INPUT_PULLDOWN );
+    // pinMode( DOTSTAR_CLK, state ? OUTPUT : INPUT_PULLDOWN );
+
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << DOTSTAR_PWR);
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+    gpio_set_level(DOTSTAR_PWR, 1);
+
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 1;
+    io_conf.pin_bit_mask = ((1ULL << DOTSTAR_DATA) | (1ULL << DOTSTAR_CLK));
+    gpio_config(&io_conf);
 
     /* Disconnect GPIO12 and GPIO15 to remove current drain through
      * pullup/pulldown resistors.
