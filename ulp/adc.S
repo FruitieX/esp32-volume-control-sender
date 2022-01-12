@@ -116,10 +116,10 @@ measure:
 
 	/* begin: scale diff_thr (r1) for log pot */
 	/* r3 = last_result (r2) >> 0x03 */
-	rsh r3, r2, 0x05
+	/* rsh r3, r2, 0x05 */
 
 	/* diff_thr (r1) = diff_thr (r1) + r3 */
-	add r1, r1, r3
+	/* add r1, r1, r3 */
 	/* end: scale diff_thr (r1) for log pot */
 
 	/* low_thr (r3) = last_result (r2) - diff_thr (r1) */
