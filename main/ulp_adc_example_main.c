@@ -358,8 +358,8 @@ static void init_ulp_program(void)
 #endif
     adc1_ulp_enable();
 
-    /* Set ULP wake up period to 10ms */
-    ulp_set_wakeup_period(0, 10 * 1000);
+    /* Set ULP wake up period to 50ms (20Hz) */
+    ulp_set_wakeup_period(0, 50 * 1000);
 
     // TinyPICO specific: disable onboard LED
     // From https://github.com/UnexpectedMaker/tinypico-helper/blob/f6f992d3f36738796c21d6c7825b8ef641a5f31b/src/TinyPICO.cpp
